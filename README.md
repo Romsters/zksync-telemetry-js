@@ -1,6 +1,8 @@
 # ZKSync Telemetry for TypeScript
 Simple telemetry integration for TypeScript CLI applications. The library automatically collects and sends anonymous usage data to help improve zkSync tools and services.
 
+For a detailed integration example, refer: [Example.md](Example.md).
+
 ## Table of Contents
 - [Installation](#installation)
 - [Basic Setup](#basic-setup)
