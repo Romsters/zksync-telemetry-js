@@ -1,5 +1,5 @@
 # ZKSync Telemetry for TypeScript
-Complete guide for integrating telemetry in TypeScript CLI applications.
+Simple telemetry integration for TypeScript CLI applications. The library automatically collects and sends anonymous usage data to help improve zkSync tools and services.
 
 ## Table of Contents
 - [Installation](#installation)
@@ -7,7 +7,6 @@ Complete guide for integrating telemetry in TypeScript CLI applications.
 - [Advanced Usage](#advanced-usage)
 - [Environment Management](#environment-management)
 - [Best Practices](#best-practices)
-- [Troubleshooting](#troubleshooting)
 - [API Reference](#api-reference)
 
 ## Installation
@@ -30,13 +29,8 @@ pnpm add zksync-telemetry
 import { Telemetry } from 'zksync-telemetry';
 
 async function main() {
-  const telemetry = await Telemetry.initialize(
-    'your-cli-name',                    
-    {
-      posthogKey: process.env.ANVIL_POSTHOG_KEY,  
-      sentryDsn: process.env.ANVIL_SENTRY_DSN,  
-    }
-  );
+  // Simple initialization - no keys needed
+  const telemetry = await Telemetry.initialize('your-cli-name');
 }
 ```
 
@@ -90,10 +84,7 @@ class CLI {
   private telemetry: Telemetry;
 
   async initialize() {
-    this.telemetry = await Telemetry.initialize('your-cli', {
-      posthogKey: process.env.ANVIL_POSTHOG_KEY,
-      sentryDsn: process.env.ANVIL_SENTRY_DSN
-    });
+    this.telemetry = await Telemetry.initialize('your-cli');
 
     const program = new Command();
 
@@ -134,7 +125,8 @@ class CLI {
   }
 
   private sanitizeOptions(options: Record<string, any>): Record<string, any> {
-    // Remove sensitive data
+    // Library handles automatic removal of sensitive keys
+    // You can add additional custom sanitization here
     const { privateKey, password, secret, ...safeOptions } = options;
     return safeOptions;
   }
@@ -143,41 +135,20 @@ class CLI {
 
 ### User Consent Management
 ```typescript
-// Check if user has consented
-const telemetry = await Telemetry.initialize('your-cli', {
-  posthogKey: process.env.ANVIL_POSTHOG_KEY
-});
-
-// Update consent
+// User consent is managed automatically via interactive prompts
+// To programmatically update consent:
 await telemetry.updateConsent(false);  // Disable telemetry
 await telemetry.updateConsent(true);   // Enable telemetry
 ```
 
 ## Environment Management
 
-### Environment-Specific Configuration
-```typescript
-// config/environments.ts
-export const getTelemetryConfig = () => {
-  switch (process.env.NODE_ENV) {
-    case 'production':
-      return {
-        posthogKey: process.env.PROD_POSTHOG_KEY,
-        sentryDsn: process.env.PROD_SENTRY_DSN
-      };
-    case 'staging':
-      return {
-        posthogKey: process.env.STAGING_POSTHOG_KEY,
-        sentryDsn: process.env.STAGING_SENTRY_DSN
-      };
-    default:
-      return {
-        posthogKey: process.env.DEV_POSTHOG_KEY,
-        sentryDsn: process.env.DEV_SENTRY_DSN
-      };
-  }
-};
-```
+### Environment Detection
+The library automatically:
+- Disables telemetry in non-interactive environments
+- Detects CI environments
+- Handles TTY detection for appropriate consent prompts
+- Manages configuration persistence between runs
 
 ## Best Practices
 
@@ -194,9 +165,13 @@ telemetry.trackEvent('wallet_connected', {
 telemetry.trackEvent('wallet_connected', {
   address: '0x123...',  // PII
   private_key: '...',   // Sensitive
-  balance: '1000'       // Sensitive
+  balance: '1000',      // Sensitive
+  api_key: '...',       // Will be automatically removed
+  password: '...'       // Will be automatically removed
 });
 ```
+
+Note: The library automatically removes any property keys containing 'key', 'password', or 'token' for additional security.
 
 ## API Reference
 
@@ -205,7 +180,6 @@ telemetry.trackEvent('wallet_connected', {
 class Telemetry {
   static initialize(
     appName: string,
-    keys: TelemetryKeys,
     customConfigPath?: string
   ): Promise<Telemetry>;
 
@@ -224,3 +198,25 @@ class Telemetry {
   shutdown(): Promise<void>;
 }
 ```
+
+### Features
+- 🔒 Privacy-first: Telemetry is off by default and requires user consent
+- 🤖 CI-aware: Automatically detects non-interactive environments
+- 🔄 Automatic reconnection on network issues
+- 🧹 Automatic sensitive data removal
+- 💾 Persistent configuration between runs
+- 📝 Detailed error tracking and event logging
+
+### Data Collection
+We collect:
+- Basic usage statistics
+- Error reports
+- Platform information
+
+We DO NOT collect:
+- Personal information
+- Private keys or addresses
+- Sensitive configuration
+- Financial data
+
+For questions or support, please open an issue on the GitHub repository.

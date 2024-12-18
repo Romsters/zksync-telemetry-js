@@ -5,9 +5,10 @@ export interface TelemetryConfig {
     configPath?: string;
   }
   
+  // Internal constants interface (not exported)
   export interface TelemetryKeys {
-    posthogKey?: string;
-    sentryDsn?: string;
+    posthogKey: string;
+    sentryDsn: string;
   }
   
   export class TelemetryError extends Error {
@@ -15,4 +16,4 @@ export interface TelemetryConfig {
       super(message);
       this.name = 'TelemetryError';
     }
-  }
+}

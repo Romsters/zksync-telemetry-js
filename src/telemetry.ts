@@ -1,25 +1,63 @@
-// src/telemetry.ts
 import * as Sentry from '@sentry/node';
-import { TelemetryConfig, TelemetryError, TelemetryKeys } from './types';
+import { TelemetryConfig, TelemetryError } from './types';
 import { ConfigManager } from './config';
-import { PostHog } from 'posthog-node';  // Use named import instead
+import { PostHog } from 'posthog-node';
+import { TELEMETRY_KEYS, POSTHOG_URL } from './constants';
 
 export class Telemetry {
   private config: TelemetryConfig;
-  private posthog?: PostHog;  // PostHog type is available directly
+  private posthog?: PostHog;
   private sentryInitialized: boolean = false;
+  private appName: string;
 
   private constructor(
     config: TelemetryConfig,
-    posthogClient?: PostHog
+    posthogClient?: PostHog,
+    appName: string = 'unknown'
   ) {
     this.config = config;
     this.posthog = posthogClient;
+    this.appName = appName;
+  }
+
+  private async reconnectPostHog(): Promise<void> {
+    if (this.config.enabled && !this.posthog) {
+      try {
+        this.posthog = new PostHog(
+          TELEMETRY_KEYS.posthogKey,
+          {
+            host: POSTHOG_URL,
+          }
+        );
+      } catch (error) {
+        console.error('Failed to reconnect to PostHog:', error);
+      }
+    }
+  }
+
+  private async reconnectSentry(): Promise<void> {
+    if (this.config.enabled && !this.sentryInitialized) {
+      try {
+        Sentry.init({
+          dsn: TELEMETRY_KEYS.sentryDsn,
+          release: process.env.npm_package_version,
+          initialScope: {
+            tags: {
+              app: this.appName,
+              version: process.env.npm_package_version || 'unknown',
+              platform: process.platform
+            }
+          }
+        });
+        this.sentryInitialized = true;
+      } catch (error) {
+        console.error('Failed to reconnect to Sentry:', error);
+      }
+    }
   }
 
   static async initialize(
     appName: string,
-    keys: TelemetryKeys,
     customConfigPath?: string
   ): Promise<Telemetry> {
     const config = await ConfigManager.load(appName, customConfigPath);
@@ -27,55 +65,65 @@ export class Telemetry {
     // Only initialize clients if telemetry is enabled
     if (config.enabled) {
       let posthogClient: PostHog | undefined;
-      let sentryInitialized = false;  // Track Sentry initialization
+      let sentryInitialized = false;
 
-      if (keys.posthogKey) {
+      try {
         posthogClient = new PostHog(
-          keys.posthogKey,
+          TELEMETRY_KEYS.posthogKey,
           {
-            host: 'https://app.posthog.com',
+            host: POSTHOG_URL,
           }
         );
+      } catch (error) {
+        console.error('Failed to initialize PostHog:', error);
       }
 
-      if (keys.sentryDsn) {
-        try {
-          Sentry.init({
-            dsn: keys.sentryDsn,
-            release: process.env.npm_package_version,
-            initialScope: {
-              tags: {
-                app: appName,
-                version: process.env.npm_package_version || 'unknown',
-                platform: process.platform
-              }
+      try {
+        Sentry.init({
+          dsn: TELEMETRY_KEYS.sentryDsn,
+          release: process.env.npm_package_version,
+          initialScope: {
+            tags: {
+              app: appName,
+              version: process.env.npm_package_version || 'unknown',
+              platform: process.platform
             }
-          });
-          sentryInitialized = true;  // Mark as initialized if successful
-        } catch (error) {
-          console.error('Failed to initialize Sentry:', error);
-          // Optionally handle initialization failure
-        }
+          }
+        });
+        sentryInitialized = true;
+      } catch (error) {
+        console.error('Failed to initialize Sentry:', error);
       }
 
-      const telemetry = new Telemetry(config, posthogClient);
-      telemetry.sentryInitialized = sentryInitialized;  // Set the initialization status
+      const telemetry = new Telemetry(
+        config,
+        posthogClient,
+        appName
+      );
+      telemetry.sentryInitialized = sentryInitialized;
       return telemetry;
     }
 
-    return new Telemetry(config);
+    return new Telemetry(config, undefined, appName);
   }
 
   async trackEvent(
     eventName: string,
     properties: Record<string, any> = {}
   ): Promise<void> {
-    if (!this.config.enabled || !this.posthog) {
+    if (!this.config.enabled) {
       return;
     }
 
+    // Try to reconnect if PostHog is not available
+    if (!this.posthog) {
+      await this.reconnectPostHog();
+      if (!this.posthog) {
+        return; // Still not available after reconnection attempt
+      }
+    }
+
     try {
-      // Add default properties
       const enrichedProperties = {
         ...properties,
         distinct_id: this.config.instanceId,
@@ -98,12 +146,21 @@ export class Telemetry {
   }
 
   trackError(error: Error, context: Record<string, any> = {}): void {
-    if (!this.config.enabled || !this.sentryInitialized) {
+    if (!this.config.enabled) {
       return;
     }
 
+    // Try to reconnect if Sentry is not initialized
+    if (!this.sentryInitialized) {
+      this.reconnectSentry().catch(error => {
+        console.error('Failed to reconnect to Sentry:', error);
+      });
+      if (!this.sentryInitialized) {
+        return; // Still not initialized after reconnection attempt
+      }
+    }
+
     Sentry.withScope((scope) => {
-      // Add context as extra data
       scope.setExtras({
         ...context,
         platform: process.platform,
@@ -118,15 +175,25 @@ export class Telemetry {
   async updateConsent(enabled: boolean): Promise<void> {
     await ConfigManager.updateConsent(this.config, enabled);
     this.config.enabled = enabled;
+
+    // If enabling telemetry, try to reconnect services
+    if (enabled) {
+      await Promise.all([
+        this.reconnectPostHog(),
+        this.reconnectSentry()
+      ]);
+    }
   }
 
   async shutdown(): Promise<void> {
     if (this.posthog) {
       await this.posthog.shutdown();
+      this.posthog = undefined;
     }
     
     if (this.sentryInitialized) {
-      await Sentry.close(2000); // Wait up to 2 seconds
+      await Sentry.close(2000);
+      this.sentryInitialized = false;
     }
   }
 }
