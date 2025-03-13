@@ -1,7 +1,8 @@
 import { TelemetryConfig } from './types';
 export declare class ConfigManager {
-    private static getDefaultConfigPath;
-    static load(appName: string, customPath?: string): Promise<TelemetryConfig>;
-    private static createNew;
-    static updateConsent(config: TelemetryConfig, enabled: boolean): Promise<void>;
+  private static getDefaultConfigPath;
+  private static getDefaultConfigDir;
+  static load(configName: string, customPath?: string): TelemetryConfig;
+  private static createNew;
+  static updateConsent(config: TelemetryConfig, enabled: boolean): void;
 }
