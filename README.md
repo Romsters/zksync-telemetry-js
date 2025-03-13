@@ -33,9 +33,14 @@ pnpm add zksync-telemetry
 ```typescript
 import { Telemetry } from 'zksync-telemetry';
 
-async function main() {
+function main() {
   // Simple initialization - no keys needed
-  const telemetry = await Telemetry.initialize('your-cli-name');
+  const telemetry = Telemetry.initialize(
+    'your-cli-name',
+    'your-cli-version',
+    'your-config-file-name',
+    'your-posthog-key',
+  );
 }
 ```
 
@@ -43,12 +48,12 @@ async function main() {
 
 ```typescript
 // Track simple event
-await telemetry.trackEvent('command_executed', {
+telemetry.trackEvent('command_executed', {
   command: 'deploy',
 });
 
 // Track event with more context
-await telemetry.trackEvent('deployment_completed', {
+telemetry.trackEvent('deployment_completed', {
   environment: 'production',
   duration_ms: 1500,
   cache_enabled: true,
@@ -93,7 +98,12 @@ class CLI {
   private telemetry: Telemetry;
 
   async initialize() {
-    this.telemetry = await Telemetry.initialize('your-cli');
+    this.telemetry = Telemetry.initialize(
+      'your-cli-name',
+      'your-cli-version',
+      'your-config-file-name',
+      'your-posthog-key',
+    );
 
     const program = new Command();
 
@@ -101,25 +111,25 @@ class CLI {
       .command('deploy')
       .option('-e, --environment <env>', 'deployment environment')
       .action(async (options) => {
-        await this.trackCommand('deploy', options);
+        this.trackCommand('deploy', options);
         try {
           // Command implementation
           await this.deploy(options);
         } catch (error) {
-          await this.handleError('deploy', error as Error, options);
+          this.handleError('deploy', error as Error, options);
           throw error;
         }
       });
   }
 
-  private async trackCommand(command: string, options: Record<string, any>) {
-    await this.telemetry.trackEvent('command_executed', {
+  private trackCommand(command: string, options: Record<string, any>) {
+    this.telemetry.trackEvent('command_executed', {
       command,
       ...this.sanitizeOptions(options),
     });
   }
 
-  private async handleError(
+  private handleError(
     command: string,
     error: Error,
     context: Record<string, any>,
@@ -144,8 +154,8 @@ class CLI {
 ```typescript
 // User consent is managed automatically via interactive prompts
 // To programmatically update consent:
-await telemetry.updateConsent(false); // Disable telemetry
-await telemetry.updateConsent(true); // Enable telemetry
+telemetry.updateConsent(false); // Disable telemetry
+telemetry.updateConsent(true); // Enable telemetry
 ```
 
 ## Environment Management
@@ -191,17 +201,21 @@ Note: The library automatically removes any property keys containing 'key', 'pas
 class Telemetry {
   static initialize(
     appName: string,
+    appVersion: string,
+    configName: string,
+    posthogKey?: string,
+    sentryDsn?: string,
     customConfigPath?: string,
-  ): Promise<Telemetry>;
+  ): Telemetry;
 
   trackEvent(
     eventName: string,
     properties?: Record<string, any>,
-  ): Promise<void>;
+  ): void;
 
   trackError(error: Error, context?: Record<string, any>): void;
 
-  updateConsent(enabled: boolean): Promise<void>;
+  updateConsent(enabled: boolean): void;
 
   shutdown(): Promise<void>;
 }
