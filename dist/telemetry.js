@@ -42,6 +42,7 @@ const posthogOptions = {
     enableExceptionAutocapture: true,
     disableGeoip: false,
     flushAt: 1,
+    flushInterval: 0,
 };
 class Telemetry {
     constructor(config, posthogClient, posthogKey, sentryInitialized = false, sentryDsn, appName = 'unknown', appVersion = 'unknown') {
